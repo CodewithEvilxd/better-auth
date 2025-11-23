@@ -451,4 +451,63 @@ describe("auto sign in on reset password", async (it) => {
 		expect(session.data?.user).toBeDefined();
 		expect(session.data?.user.email).toBe(testUser.email);
 	});
+
+	it("should create new session if existing session belongs to different user", async () => {
+		const newHeaders = new Headers();
+		const secondUser = await client.signUp.email({
+			name: "Second User",
+			email: "second-user@email.com",
+			password: "password123",
+			fetchOptions: {
+				onSuccess(ctx) {
+					const setCookie = ctx.response.headers.get("set-cookie");
+					if (setCookie) {
+						newHeaders.set("cookie", setCookie);
+					}
+				},
+			},
+		});
+		expect(secondUser.data?.user).toBeDefined();
+
+		let resetToken = "";
+		await client.requestPasswordReset({
+			email: testUser.email,
+			redirectTo: "http://localhost:3000",
+		});
+		resetToken = token;
+
+		let resetHeaders = new Headers();
+		resetHeaders.set("cookie", newHeaders.get("cookie") || "");
+
+		const res = await client.resetPassword(
+			{
+				newPassword: "new-password-for-test-user",
+			},
+			{
+				query: {
+					token: resetToken,
+				},
+				fetchOptions: {
+					headers: resetHeaders,
+					onSuccess(context) {
+						const setCookie = context.response.headers.get("set-cookie");
+						if (setCookie) {
+							resetHeaders.set("cookie", setCookie);
+						}
+					},
+				},
+			},
+		);
+
+		expect(res.data?.status).toBe(true);
+
+		const session = await client.getSession({
+			fetchOptions: {
+				headers: resetHeaders,
+			},
+		});
+		expect(session.data?.user).toBeDefined();
+		expect(session.data?.user.email).toBe(testUser.email);
+		expect(session.data?.user.id).not.toBe(secondUser.data?.user.id);
+	});
 });
